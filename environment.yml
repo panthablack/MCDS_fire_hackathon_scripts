@@ -1,0 +1,10 @@
+name: analysis3
+channels:
+  - conda-forge
+dependencies:
+  - numpy
+  - pandas
+  - netCDF4
+  - geopandas
+  - rasterio
+
