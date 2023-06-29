@@ -4,8 +4,8 @@ Scripts to support a collaborative data-analytic event, focussing on
 fire in Australia. 
 
 ## Scripts
- - `data_sources.txt`: Description of each of the datasets involved,
-   their source, and some metadata about them
+ - `dataset_inventory.csv`: Description of each of the datasets
+   involved, their source, and some metadata about them
  - `environment.yml`: A conda environment file for building the
    collection of conda packages used by `load_datasets.py`
  - `load_datasets.py`: A Python script that illustrates how you can
