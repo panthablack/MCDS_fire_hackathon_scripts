@@ -17,6 +17,7 @@ export population_gridDIR=$WORKDIR/population_grid
 export climate_classificationDIR=$WORKDIR/climate_classification
 export roadsDIR=$WORKDIR/roads
 export weatherDIR=$WORKDIR/weather
+export phenologyDIR=$WORKDIR/phenology
 export fire_historyDIR=$WORKDIR/fire_history
 
 mkdir -p $SCRIPTSDIR
@@ -120,6 +121,12 @@ wget -O MCD12C1.061.nc --user=${usgs_user} --password=${usgs_password} "https://
 
 ######################### vegetation indices
 
+mkdir -p $phenologyDIR
+cd $phenologyDIR
+
+mkdir -p MCD12C1
+cd MCD12C1
+
 MCD19A3CMG.A2000055.061.2022315175328.hdf  
 https://e4ftl01.cr.usgs.gov/MOTA/MCD19A3CMG.061/2000.02.24/MCD19A3CMG.A2000055.061.2022315175328.hdf
 
@@ -139,8 +146,7 @@ module load foss/2021b gdal/3.3.2
 # years=( 2000 2001 2022 2023 )
 # for year in "${years[@]}" ; do
 
-## for year in $(seq 2000 2023) ; do
-for year in $(seq 2002 2021) ; do
+for year in $(seq 2000 2023) ; do
     id1=0
     idn=22
     if [ $year -eq 2000 ] ; then
@@ -183,7 +189,8 @@ for year in $(seq 2000 2023) ; do
     id1=0
     idn=22
     if [ $year -eq 2000 ] ; then
-        id1=3
+        ## id1=3
+        id1=4
     fi
     if [ $year -eq 2023 ] ; then
 	idn=9
@@ -211,6 +218,58 @@ for year in $(seq 2000 2023) ; do
     done
 done
 
+## There are some missing files. The following chunk of code creates
+## 'null' versions (populating the EVI variable with the '_FillValue'
+## value).
+basedate="2000-01-01"
+sample_ncfilepath=$ncfile
+sample_ncfile=$(basename ${sample_ncfilepath})
+sample_date=$(dirname $sample_ncfilepath | rev | cut -d'/' -f1 | rev | tr '.' '-')
+sample_yyyymmdd=$(date -d "${sample_date}" +%Y.%m.%d)
+sample_yyyyjjj=$(date -d "${sample_date}" +%Y%j)
+sample_dateval=$(( ($(date --date="${sample_date}" +%s) - $(date --date="$basedate" +%s) )/(60*60*24) ))
+for year in $(seq 2000 2023) ; do
+    id1=0
+    idn=22
+    if [ $year -eq 2000 ] ; then
+        ## id1=3
+        id1=4
+    fi
+    if [ $year -eq 2023 ] ; then
+	idn=9
+    fi
+    for idate in $(seq $id1 $idn) ; do
+        jday=$(echo $idate*16 | bc)
+	yyyymmdd=$(date -d "$year-01-01 + $jday days" +%Y.%m.%d)
+	thisdate=$(date -d "$year-01-01 + $jday days" +%Y-%m-%d)
+	lastdate=$(date -d "$year-01-01 + $jday days + 15 days" +%Y-%m-%d)
+	yyyyjjj=$(date -d "$year-01-01 + $jday days" +%Y%j)
+	yyyymmdd_dir=e4ftl01.cr.usgs.gov/MOLT/MOD13C1.061/${yyyymmdd}/
+	dateval=$(( ($(date --date="$thisdate" +%s) - $(date --date="$basedate" +%s) )/(60*60*24) ))
+	## only do this if the file is missing
+	if [ $(ls -1 ${yyyymmdd_dir}/*.nc | wc -l) -eq 0 ] ; then
+	    echo year=$year idate=$idate
+	    ## name for the new file
+	    target_ncfile=$(echo ${sample_ncfile} | sed "s/${sample_yyyyjjj}/${yyyyjjj}/g")
+	    ## set up the target directory
+	    mkdir -p ${yyyymmdd_dir}
+	    target_ncfilepath=${yyyymmdd_dir}/${target_ncfile}
+	    ## copy the sample file to the target filepath
+	    cp -f ${sample_ncfilepath} ${target_ncfilepath}
+	    ## set the date
+	    ncap2 -O -s "date(0)=${dateval}.0;" ${target_ncfilepath} ${target_ncfilepath}
+	    ## fill with null values
+	    ncap2 -O -s "where(EVI > -3100s) EVI=-3000s;"  ${target_ncfilepath} ${target_ncfilepath}
+	    ## modify date-related global attributes of this replacement file
+	    ncatted -O -a GDAL_DAYSPROCESSED,global,d,c, -a GDAL_INPUTPOINTER,global,d,c, -a GDAL_RANGEBEGINNINGDATE,global,m,c,"${thisdate}" -a GDAL_RANGEENDINGDATE,global,m,c,"${lastdate}" ${target_ncfilepath} ${target_ncfilepath}
+	fi
+    done
+done
+
+
+## concatenate along the 'date' dimension (this is the 'unlimited' or
+## 'record' dimension in netCDF terms)
+ncrcat -O e4ftl01.cr.usgs.gov/MOLT/MOD13C1.061/2*/*.nc MOD13C1-061.nc
 
 ######################### forest cover
 
@@ -257,11 +316,6 @@ mv GA.csv.gz avhrr-ga-all.csv.gz
 
 ## clean up
 rm *.zip
-
-########################## Climate: rain, temp, vapor-pressure, evap, solar-rad, rel-hum, evapotransp, mslp
-## https://www.longpaddock.qld.gov.au/silo/about/climate-variables/
-## https://www.longpaddock.qld.gov.au/silo/gridded-data/
-## https://s3-ap-southeast-2.amazonaws.com/silo-open-data/Official/annual/index.html
 
 
 ######################## gridded population data
@@ -338,9 +392,9 @@ cd $roadsDIR
 mkdir -p $weatherDIR
 cd $weatherDIR
 
-## Australian Gridded Climate Data (AGCD) v1.0.0/ Australian Water Availability Project (AWAP)
+## Australian Gridded Climate Data (AGCD) v1.0.1/ Australian Water Availability Project (AWAP)
 ## daily
-## https://geonetwork.nci.org.au/geonetwork/srv/eng/catalog.search#/metadata/f6475_9317_5747_6204
+## https://geonetwork.nci.org.au/geonetwork/srv/eng/catalog.search#/metadata/f1801_8183_3094_1341
 
 ## ERA5
 ## 
