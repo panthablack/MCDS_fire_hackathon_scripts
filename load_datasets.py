@@ -10,6 +10,9 @@ import rasterio as rio
 import gzip
 from shapely.geometry import Point
 import cftime
+import xarray, dask
+import os
+import glob
 
 ####################
 
@@ -25,6 +28,8 @@ else:
 
 study_period_bounds = [pd.Timestamp('2020-01-01T00:00:00',tz = 'UTC'), 
                        pd.Timestamp('2020-02-01T00:00:00',tz = 'UTC')]
+
+#################### ALUM land-use data
 
 alum_metadata = pd.read_csv('data/ALUM/NLUM_ALUMV8_250m_2015_16_alb/NLUM_ALUMV8_250m_2015_16_alb.csv')
 
@@ -310,6 +315,116 @@ luc_mcd12c1_dataset.close()
 res = plt.imshow(luc_mcd12c1_roi_arr, interpolation='nearest')
 plt.savefig("luc_mcd12c1_roi_landsea.png")
 plt.close()
+
+#################### ERA5 hourly weather data
+
+era5vars = os.listdir('data/weather/era5/australia')
+## era5var = era5vars[0]
+era5_data = {}
+era5_coord_vars = ['latitude', 'longitude', 'time']
+for era5var in era5vars:
+    print(f'Loading ERA5 variable {era5var}')
+    ds = xarray.open_mfdataset(f'data/weather/era5/australia/{era5var}/2???/*.nc')
+    era5_lat  = ds.variables['latitude' ].to_numpy()
+    era5_lon  = ds.variables['longitude'].to_numpy()
+    era5_time = ds.variables['time'].to_numpy()
+    roi_ixlim = np.searchsorted(era5_lon, roi_lon_bounds)
+    roi_iylim = era5_lat.size - np.searchsorted(era5_lat[::-1], roi_lat_bounds[::-1])
+    roi_itlim = np.searchsorted(era5_time, [ t.to_numpy() for t in study_period_bounds ])
+    era5varname = [ vn for vn in list(ds.variables.keys()) if vn not in era5_coord_vars ][0]
+    era5_data[era5var] = ds.variables[era5varname][roi_itlim[0]:roi_itlim[1], roi_iylim[0]:roi_iylim[1], roi_ixlim[0]:roi_ixlim[1]].to_numpy()
+    era5_time_subset = era5_time[roi_itlim[0]:roi_itlim[1]]
+    era5_lon_subset = era5_lon[roi_ixlim[0]:roi_ixlim[1]]
+    era5_lat_subset = era5_lat[roi_iylim[0]:roi_iylim[1]]
+    ds.close()
+
+#################### AGCD daily weather data
+
+agcdvars = os.listdir('data/weather/agcd')
+agcdvar = agcdvars[0]
+agcd_data = {}
+agcd_coord_vars = ['lat', 'lon', 'time', 'lat_bnds', 'lon_bnds', 'time_bnds','crs']
+for agcdvar in agcdvars:
+    ## print(f'Loading AGCD variable {agcdvar}')
+    ds = xarray.open_mfdataset(f'data/weather/agcd/{agcdvar}/*/r005/01day/*.nc')
+    agcd_lat  = ds.variables['lat'].to_numpy()
+    agcd_lon  = ds.variables['lon'].to_numpy()
+    agcd_time = ds.variables['time'].to_numpy()
+    roi_ixlim = np.searchsorted(agcd_lon, roi_lon_bounds)
+    roi_iylim = np.searchsorted(agcd_lat, roi_lat_bounds)
+    roi_itlim = np.searchsorted(agcd_time, [ t.to_numpy() for t in study_period_bounds ])
+    agcdvarname = [ vn for vn in list(ds.variables.keys()) if vn not in agcd_coord_vars ][0]
+    agcd_data[agcdvar] = ds.variables[agcdvarname][roi_itlim[0]:roi_itlim[1], roi_iylim[0]:roi_iylim[1], roi_ixlim[0]:roi_ixlim[1]].to_numpy()
+    agcd_time_subset = agcd_time[roi_itlim[0]:roi_itlim[1]]
+    agcd_lon_subset = agcd_lon[roi_ixlim[0]:roi_ixlim[1]]
+    agcd_lat_subset = agcd_lat[roi_iylim[0]:roi_iylim[1]]
+    ds.close()
+
+#################### BARRA hourly weather data
+
+barravars = [ os.path.basename(f).replace('-PT1H-BARRA_R-v1-200001.nc','').replace('-fc','').replace('-spec','').replace('-slv','') for f in glob.glob('data/weather/barra/*-200001.nc') ]
+barravar = barravars[0]
+barra_data = {}
+barra_coord_vars = ['lat', 'lon', 'time', 'lat_bnds', 'lon_bnds', 'time_bnds','crs']
+## for barravar in barravars:
+## print(f'Loading BARRA variable {barravar}')
+fls = glob.glob(f'data/weather/barra/{barravar}*.nc')
+fls.sort()
+## 112, 119 121, ok; 122, 125 not ok
+ds = xarray.open_mfdataset(fls[:119]) ## f'data/weather/barra/{barravar}*.nc'
+ds.close()
+
+fc = nc.Dataset(fls[120])
+t120 = fc.variables['time'][:].data
+fc.close()
+
+fc = nc.Dataset(fls[121])
+t121 = fc.variables['time'][:].data
+fc.close()
+
+fc = nc.Dataset(fls[122])
+t122 = fc.variables['time'][:].data
+fc.close()
+
+fc = nc.Dataset(fls[123])
+t123 = fc.variables['time'][:].data
+fc.close()
+
+np.all((t120[1:] - t120[:-1]) == 1.)
+np.all((t121[1:] - t121[:-1]) == 1.)
+np.all((t122[1:] - t122[:-1]) == 1.)
+np.all((t123[1:] - t123[:-1]) == 1.)
+
+for barravar in barravars:
+    fls = glob.glob(f'data/weather/barra/{barravar}*.nc')
+    fls.sort()
+    for fl in fls:
+        fc = nc.Dataset(fl)
+        t = fc.variables['time'][:].data
+        fc.close()
+        if not np.all((t[1:] - t[:-1]) == 1.):
+            print(fl)
+
+201002,201003,201107,201208,201312,201404,201407,201411
+
+
+    
+
+
+barra_lat  = ds.variables['lat'].to_numpy()
+barra_lon  = ds.variables['lon'].to_numpy()
+barra_time = ds.variables['time'].to_numpy()
+roi_ixlim = np.searchsorted(barra_lon, roi_lon_bounds)
+roi_iylim = np.searchsorted(barra_lat, roi_lat_bounds)
+roi_itlim = np.searchsorted(barra_time, [ t.to_numpy() for t in study_period_bounds ])
+barravarname = [ vn for vn in list(ds.variables.keys()) if vn not in barra_coord_vars ][0]
+barra_data[barravar] = ds.variables[barravarname][roi_itlim[0]:roi_itlim[1], roi_iylim[0]:roi_iylim[1], roi_ixlim[0]:roi_ixlim[1]].to_numpy()
+barra_time_subset = barra_time[roi_itlim[0]:roi_itlim[1]]
+barra_lon_subset = barra_lon[roi_ixlim[0]:roi_ixlim[1]]
+barra_lat_subset = barra_lat[roi_iylim[0]:roi_iylim[1]]
+ds.close()
+
+
 
 
 
